@@ -344,6 +344,51 @@
             margin: 20px 0;
             color: #f4e4c1;
         }
+
+        .timer-section {
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(244, 228, 193, 0.1);
+            border-radius: 15px;
+            border: 2px solid #8b7355;
+        }
+
+        .timer-display {
+            font-size: 3em;
+            font-weight: 700;
+            color: #d4af37;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-family: 'Cinzel', serif;
+        }
+
+        .timer-display.warning {
+            color: #ff6b35;
+            animation: pulse 1s infinite;
+        }
+
+        .timer-display.expired {
+            color: #dc3545;
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .timer-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .timer-btn {
+            padding: 10px 20px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -359,12 +404,28 @@
                 <h2>Enter Fighter Names</h2>
                 <textarea id="fighter-input" placeholder="Enter fighter names, one per line..."></textarea>
                 <br>
+                <div style="margin: 20px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <div>
+                        <label for="pool-size" style="color: #d4af37; font-size: 1.2em; display: block; margin-bottom: 5px;">Pool Size:</label>
+                        <input type="number" id="pool-size" min="3" max="10" value="5" 
+                               style="padding: 8px 12px; font-size: 16px; font-family: 'Cinzel', serif; 
+                                      background: rgba(244, 228, 193, 0.1); border: 2px solid #8b7355; 
+                                      border-radius: 5px; color: #f4e4c1; width: 100%;">
+                    </div>
+                    <div>
+                        <label for="rounds-per-fighter" style="color: #d4af37; font-size: 1.2em; display: block; margin-bottom: 5px;">Rounds per Fighter:</label>
+                        <input type="number" id="rounds-per-fighter" min="1" max="5" value="1" 
+                               style="padding: 8px 12px; font-size: 16px; font-family: 'Cinzel', serif; 
+                                      background: rgba(244, 228, 193, 0.1); border: 2px solid #8b7355; 
+                                      border-radius: 5px; color: #f4e4c1; width: 100%;">
+                    </div>
+                </div>
                 <div style="margin: 20px 0;">
-                    <label for="pool-size" style="color: #d4af37; font-size: 1.2em; margin-right: 10px;">Pool Size:</label>
-                    <input type="number" id="pool-size" min="3" max="10" value="5" 
+                    <label for="match-duration" style="color: #d4af37; font-size: 1.2em; display: block; margin-bottom: 5px;">Match Duration (minutes, 0 = no timer):</label>
+                    <input type="number" id="match-duration" min="0" max="30" value="0" step="0.5"
                            style="padding: 8px 12px; font-size: 16px; font-family: 'Cinzel', serif; 
                                   background: rgba(244, 228, 193, 0.1); border: 2px solid #8b7355; 
-                                  border-radius: 5px; color: #f4e4c1; width: 80px;">
+                                  border-radius: 5px; color: #f4e4c1; width: 120px; margin: 0 auto; display: block;">
                 </div>
                 <button class="btn" onclick="generateTournament()">Generate Tournament</button>
             </div>
@@ -392,6 +453,16 @@
         <div id="fighting-screen" class="screen">
             <div class="match-info" id="match-info">
                 Match 1 of 10
+            </div>
+            
+            <!-- Timer Section -->
+            <div id="timer-section" class="timer-section" style="display: none;">
+                <div class="timer-display" id="timer-display">3:00</div>
+                <div class="timer-controls">
+                    <button class="btn timer-btn" id="start-btn" onclick="startTimer()">Start</button>
+                    <button class="btn timer-btn" id="stop-btn" onclick="stopTimer()">Stop</button>
+                    <button class="btn timer-btn" onclick="resetTimer()">Reset</button>
+                </div>
             </div>
             
             <div class="fighting-arena">
@@ -472,6 +543,11 @@
         let currentMatchIndex = 0;
         let scoreHistory = [];
         let matchResults = [];
+        let roundsPerFighter = 1;
+        let matchDurationMinutes = 0;
+        let timerSeconds = 0;
+        let timerInterval = null;
+        let timerRunning = false;
 
         function generateTournament() {
             const input = document.getElementById('fighter-input').value.trim();
@@ -486,6 +562,10 @@
                 alert('Please enter at least 2 fighters!');
                 return;
             }
+
+            // Get tournament settings
+            roundsPerFighter = parseInt(document.getElementById('rounds-per-fighter').value) || 1;
+            matchDurationMinutes = parseFloat(document.getElementById('match-duration').value) || 0;
 
             matches = generateMatches(fighters);
             displayMatches();
@@ -513,20 +593,23 @@
                 }
             }
 
-            // Generate all potential matches for each pool
+            // Generate all potential matches for each pool (including multiple rounds)
             const allMatches = [];
             pools.forEach((pool, poolIndex) => {
-                for (let i = 0; i < pool.length; i++) {
-                    for (let j = i + 1; j < pool.length; j++) {
-                        allMatches.push({
-                            redFighter: pool[i],
-                            blueFighter: pool[j],
-                            pool: poolIndex + 1,
-                            completed: false,
-                            redScore: 0,
-                            blueScore: 0,
-                            winner: null
-                        });
+                for (let round = 1; round <= roundsPerFighter; round++) {
+                    for (let i = 0; i < pool.length; i++) {
+                        for (let j = i + 1; j < pool.length; j++) {
+                            allMatches.push({
+                                redFighter: pool[i],
+                                blueFighter: pool[j],
+                                pool: poolIndex + 1,
+                                round: round,
+                                completed: false,
+                                redScore: 0,
+                                blueScore: 0,
+                                winner: null
+                            });
+                        }
                     }
                 }
             });
@@ -549,27 +632,45 @@
             
             while (remainingMatches.length > 0) {
                 let bestMatchIndex = -1;
-                let bestScore = -1;
+                let bestScore = -Infinity;
                 
                 // Find the match that gives fighters the most rest time
                 for (let i = 0; i < remainingMatches.length; i++) {
                     const match = remainingMatches[i];
-                    const redLastMatch = fighterLastMatch[match.redFighter] || -Infinity;
-                    const blueLastMatch = fighterLastMatch[match.blueFighter] || -Infinity;
+                    const redLastMatch = fighterLastMatch[match.redFighter];
+                    const blueLastMatch = fighterLastMatch[match.blueFighter];
                     
-                    // Calculate minimum rest time for both fighters
+                    // Calculate rest time for both fighters (matches since last fight)
                     const currentMatchNumber = orderedMatches.length;
-                    const redRest = currentMatchNumber - redLastMatch;
-                    const blueRest = currentMatchNumber - blueLastMatch;
-                    const minRest = Math.min(redRest, blueRest);
+                    const redRest = redLastMatch !== undefined ? (currentMatchNumber - redLastMatch) : 1000; // High value for first fight
+                    const blueRest = blueLastMatch !== undefined ? (currentMatchNumber - blueLastMatch) : 1000;
                     
-                    // Prefer matches where both fighters have had more rest
-                    const score = minRest + (redRest + blueRest) * 0.1;
+                    // Calculate score based on rest time
+                    // Prioritize minimum rest (avoid consecutive fights) with bonus for total rest
+                    const minRest = Math.min(redRest, blueRest);
+                    const totalRest = redRest + blueRest;
+                    
+                    // Heavy penalty for consecutive fights (rest = 1), strong preference for longer rest
+                    let score;
+                    if (minRest <= 1) {
+                        score = -1000 + totalRest; // Severe penalty for consecutive fights
+                    } else {
+                        score = minRest * 100 + totalRest; // Reward longer minimum rest
+                    }
+                    
+                    // Additional bonus for balanced rest (both fighters rested similarly)
+                    const restBalance = 10 - Math.abs(redRest - blueRest);
+                    score += restBalance;
                     
                     if (score > bestScore) {
                         bestScore = score;
                         bestMatchIndex = i;
                     }
+                }
+                
+                // If no good matches found (all would be consecutive), pick the least bad
+                if (bestMatchIndex === -1) {
+                    bestMatchIndex = 0;
                 }
                 
                 // Add the best match to the ordered list
@@ -597,7 +698,7 @@
                     <td>${match.id}</td>
                     <td>${match.redFighter}</td>
                     <td>${match.blueFighter}</td>
-                    <td>Pool ${match.pool}</td>
+                    <td>Pool ${match.pool}${roundsPerFighter > 1 ? ` R${match.round}` : ''}</td>
                     <td>${match.completed ? `${match.winner} wins ${match.redScore}-${match.blueScore}` : 'Pending'}</td>
                 `;
 
@@ -615,10 +716,100 @@
             document.getElementById('blue-name').textContent = match.blueFighter;
             document.getElementById('red-score').textContent = match.redScore;
             document.getElementById('blue-score').textContent = match.blueScore;
-            document.getElementById('match-info').textContent = `Match ${match.id} of ${matches.length}`;
+            document.getElementById('match-info').textContent = `Match ${match.id} of ${matches.length}${roundsPerFighter > 1 ? ` (Round ${match.round})` : ''}`;
+            
+            // Setup timer if duration is specified
+            const timerSection = document.getElementById('timer-section');
+            if (matchDurationMinutes > 0) {
+                timerSection.style.display = 'block';
+                initializeTimer();
+            } else {
+                timerSection.style.display = 'none';
+            }
             
             scoreHistory = [];
             showScreen('fighting-screen');
+        }
+
+        function initializeTimer() {
+            timerSeconds = Math.floor(matchDurationMinutes * 60);
+            updateTimerDisplay();
+            stopTimer(); // Ensure timer is stopped
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(timerSeconds / 60);
+            const seconds = timerSeconds % 60;
+            const display = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            const timerDisplay = document.getElementById('timer-display');
+            timerDisplay.textContent = display;
+            
+            // Change color based on remaining time
+            timerDisplay.classList.remove('warning', 'expired');
+            if (timerSeconds <= 0) {
+                timerDisplay.classList.add('expired');
+            } else if (timerSeconds <= 30) {
+                timerDisplay.classList.add('warning');
+            }
+        }
+
+        function startTimer() {
+            if (timerRunning) return;
+            
+            timerRunning = true;
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('stop-btn').disabled = false;
+            
+            timerInterval = setInterval(() => {
+                timerSeconds--;
+                updateTimerDisplay();
+                
+                if (timerSeconds <= 0) {
+                    timeExpired();
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (!timerRunning) return;
+            
+            timerRunning = false;
+            document.getElementById('start-btn').disabled = false;
+            document.getElementById('stop-btn').disabled = true;
+            
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        function resetTimer() {
+            stopTimer();
+            initializeTimer();
+        }
+
+        function timeExpired() {
+            stopTimer();
+            
+            const match = matches[currentMatchIndex];
+            const redScore = match.redScore;
+            const blueScore = match.blueScore;
+            
+            // Determine winner by highest score
+            if (redScore !== blueScore) {
+                match.completed = true;
+                match.winner = redScore > blueScore ? match.redFighter : match.blueFighter;
+                
+                const winnerName = match.winner;
+                const finalScore = `${redScore}-${blueScore}`;
+                
+                document.getElementById('victory-text').textContent = `Time expired! ${winnerName} wins ${finalScore}!`;
+                showScreen('victory-screen');
+            } else {
+                // Handle tie - could extend time or declare draw
+                alert('Time expired with a tie! Match continues until someone scores.');
+            }
         }
 
         function addScore(fighter, points) {
@@ -804,11 +995,12 @@
 
             // Add detailed match results
             csvContent += "\n\nDETAILED MATCH RESULTS\n";
-            csvContent += "Match,Pool,Red Fighter,Red Score,Blue Fighter,Blue Score,Winner\n";
+            csvContent += "Match,Pool,Round,Red Fighter,Red Score,Blue Fighter,Blue Score,Winner\n";
 
             matches.forEach(match => {
                 if (match.completed) {
-                    csvContent += `${match.id},${match.pool},"${match.redFighter}",${match.redScore},"${match.blueFighter}",${match.blueScore},"${match.winner}"\n`;
+                    const round = match.round || 1;
+                    csvContent += `${match.id},${match.pool},${round},"${match.redFighter}",${match.redScore},"${match.blueFighter}",${match.blueScore},"${match.winner}"\n`;
                 }
             });
 
@@ -835,8 +1027,14 @@
             currentMatchIndex = 0;
             scoreHistory = [];
             matchResults = [];
+            roundsPerFighter = 1;
+            matchDurationMinutes = 0;
+            stopTimer(); // Stop any running timer
             
             document.getElementById('fighter-input').value = '';
+            document.getElementById('pool-size').value = '5';
+            document.getElementById('rounds-per-fighter').value = '1';
+            document.getElementById('match-duration').value = '0';
             showScreen('input-screen');
         }
 
