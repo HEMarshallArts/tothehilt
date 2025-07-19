@@ -458,7 +458,10 @@
             <div class="final-results">
                 <h2 style="color: #d4af37; margin-bottom: 30px;">Final Tournament Rankings</h2>
                 <div id="rankings-list"></div>
-                <button class="btn" style="margin-top: 30px;" onclick="restartTournament()">New Tournament</button>
+                <div style="margin-top: 30px;">
+                    <button class="btn" onclick="exportToCSV()">Export Results to CSV</button>
+                    <button class="btn" onclick="restartTournament()">New Tournament</button>
+                </div>
             </div>
         </div>
     </div>
@@ -762,6 +765,68 @@
             });
 
             showScreen('rankings-screen');
+        }
+
+        function exportToCSV() {
+            // Create CSV content with tournament results
+            let csvContent = "Tournament Results - To The Hilt\n\n";
+            
+            // Tournament Summary
+            csvContent += "FINAL RANKINGS\n";
+            csvContent += "Rank,Fighter Name,Wins,Total Matches,Win Rate\n";
+            
+            // Calculate fighter stats
+            const fighterStats = {};
+            fighters.forEach(fighter => {
+                fighterStats[fighter] = { wins: 0, matches: 0 };
+            });
+
+            matches.forEach(match => {
+                if (match.completed) {
+                    fighterStats[match.redFighter].matches++;
+                    fighterStats[match.blueFighter].matches++;
+                    
+                    if (match.winner) {
+                        fighterStats[match.winner].wins++;
+                    }
+                }
+            });
+
+            // Sort by wins and add to CSV
+            const sortedFighters = Object.entries(fighterStats)
+                .sort((a, b) => b[1].wins - a[1].wins);
+
+            sortedFighters.forEach((entry, index) => {
+                const [name, stats] = entry;
+                const winRate = stats.matches > 0 ? ((stats.wins / stats.matches) * 100).toFixed(1) : "0.0";
+                csvContent += `${index + 1},"${name}",${stats.wins},${stats.matches},${winRate}%\n`;
+            });
+
+            // Add detailed match results
+            csvContent += "\n\nDETAILED MATCH RESULTS\n";
+            csvContent += "Match,Pool,Red Fighter,Red Score,Blue Fighter,Blue Score,Winner\n";
+
+            matches.forEach(match => {
+                if (match.completed) {
+                    csvContent += `${match.id},${match.pool},"${match.redFighter}",${match.redScore},"${match.blueFighter}",${match.blueScore},"${match.winner}"\n`;
+                }
+            });
+
+            // Create and download the file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            
+            // Create filename with timestamp
+            const now = new Date();
+            const timestamp = now.toISOString().slice(0, 19).replace(/[:-]/g, '').replace('T', '_');
+            link.setAttribute('download', `ToTheHilt_Results_${timestamp}.csv`);
+            
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         function restartTournament() {
