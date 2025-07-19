@@ -490,9 +490,6 @@
         }
 
         function generateMatches(fighterList) {
-            const matchList = [];
-            let matchId = 1;
-
             // Get user-specified pool size
             const desiredPoolSize = parseInt(document.getElementById('pool-size').value) || 5;
             const totalFighters = fighterList.length;
@@ -501,7 +498,7 @@
             const numPools = Math.ceil(totalFighters / desiredPoolSize);
             const actualPoolSize = Math.ceil(totalFighters / numPools);
             
-            // Create pools with equal distribution
+            // Create pools with random distribution
             const pools = [];
             const shuffledFighters = [...fighterList].sort(() => Math.random() - 0.5);
             
@@ -513,12 +510,12 @@
                 }
             }
 
-            // Generate round-robin matches for each pool
+            // Generate all potential matches for each pool
+            const allMatches = [];
             pools.forEach((pool, poolIndex) => {
                 for (let i = 0; i < pool.length; i++) {
                     for (let j = i + 1; j < pool.length; j++) {
-                        matchList.push({
-                            id: matchId++,
+                        allMatches.push({
                             redFighter: pool[i],
                             blueFighter: pool[j],
                             pool: poolIndex + 1,
@@ -531,7 +528,57 @@
                 }
             });
 
-            return matchList;
+            // Optimize match order to maximize rest time between fights
+            const orderedMatches = optimizeMatchOrder(allMatches);
+            
+            // Add match IDs after ordering
+            orderedMatches.forEach((match, index) => {
+                match.id = index + 1;
+            });
+
+            return orderedMatches;
+        }
+
+        function optimizeMatchOrder(matches) {
+            const orderedMatches = [];
+            const remainingMatches = [...matches];
+            const fighterLastMatch = {}; // Track when each fighter last fought
+            
+            while (remainingMatches.length > 0) {
+                let bestMatchIndex = -1;
+                let bestScore = -1;
+                
+                // Find the match that gives fighters the most rest time
+                for (let i = 0; i < remainingMatches.length; i++) {
+                    const match = remainingMatches[i];
+                    const redLastMatch = fighterLastMatch[match.redFighter] || -Infinity;
+                    const blueLastMatch = fighterLastMatch[match.blueFighter] || -Infinity;
+                    
+                    // Calculate minimum rest time for both fighters
+                    const currentMatchNumber = orderedMatches.length;
+                    const redRest = currentMatchNumber - redLastMatch;
+                    const blueRest = currentMatchNumber - blueLastMatch;
+                    const minRest = Math.min(redRest, blueRest);
+                    
+                    // Prefer matches where both fighters have had more rest
+                    const score = minRest + (redRest + blueRest) * 0.1;
+                    
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatchIndex = i;
+                    }
+                }
+                
+                // Add the best match to the ordered list
+                const selectedMatch = remainingMatches.splice(bestMatchIndex, 1)[0];
+                orderedMatches.push(selectedMatch);
+                
+                // Update when these fighters last fought
+                fighterLastMatch[selectedMatch.redFighter] = orderedMatches.length - 1;
+                fighterLastMatch[selectedMatch.blueFighter] = orderedMatches.length - 1;
+            }
+            
+            return orderedMatches;
         }
 
         function displayMatches() {
